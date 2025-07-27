@@ -1,18 +1,7 @@
-import React from 'react';  
+import React from '../react';   
+import ReactDOM from '../react-dom/client';
 
-const element = <h1 title="title">Hello, React!</h1>;
+const element = <h1 title="title">Hello, React!<a href="https://www.baidu.com">I am a a</a></h1>;
+console.log('element: ', element);
 
-const node = document.createElement(element.type);
-node.title = element.props.title;
-
-const text = document.createTextNode('');
-text.nodeValue = element.props.children;
- 
-node.appendChild(text);
-
-const root = document.getElementById('root');
-root.appendChild(node);
-
-
-// const root = ReactDOM.createRoot(document.getElementById('root'));
-// root.render(element);
+ReactDOM.render(element, document.getElementById('root'));
