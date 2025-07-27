@@ -1,0 +1,27 @@
+{
+  "name": "simple_react",
+  "version": "1.0.0",
+  "main": "webpack.config.js",
+  "scripts": {
+    "build": "webpack --mode development",
+    "start": "webpack serve --mode development",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "html-webpack-plugin": "^5.6.3",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
+  },
+  "dependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/plugin-transform-react-jsx": "^7.27.1",
+    "@babel/preset-env": "^7.28.0",
+    "babel-loader": "^10.0.0",
+    "react": "16.8.6",
+    "webpack": "^5.100.2"
+  }
+}
