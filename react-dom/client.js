@@ -1,14 +1,16 @@
 import { scheduleTask } from '../react/polyfillIdle';
 
 let nextUnitOfWork = null;
+let wipRoot = null;
 
 function render(element, container) {
-    nextUnitOfWork = {
+    wipRoot = {
         dom: container,
         props: {
-            children: [element]
+            children: [element] // 根元素
         }
     }
+    nextUnitOfWork = wipRoot;
 }
 
 const createDom = (fiber) => {
@@ -29,11 +31,34 @@ const createDom = (fiber) => {
     return dom;
 }
 
+function commitWork(fiber) {
+    if (!fiber) {
+        return;
+    }
+    let domParent = fiber.parent.dom;
+    while (!domParent) {
+        domParent = domParent.parent.dom
+    }
+    domParent.appendChild(fiber.dom)
+    commitWork(fiber.child)
+    commitWork(fiber.sibling)
+}
+
+function commitRoot() {
+    // 提交根元素
+    commitWork(wipRoot.child);
+    // 清空wipRoot
+    wipRoot = null;
+}
+
 function workLoop(deadline) {
     let shouldYield = false;
     while (nextUnitOfWork && !shouldYield) {
         nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
         shouldYield = deadline.timeRemaining() < 1;
+    }
+    if (!nextUnitOfWork && wipRoot) {
+        commitRoot();
     }
     scheduleTask(workLoop, performance.now());
 }
@@ -44,9 +69,9 @@ function performUnitOfWork(fiber) {
         fiber.dom = createDom(fiber);
     }
     // 将dom添加到父元素
-    if (fiber.parent) {
-        fiber.parent.dom.appendChild(fiber.dom);
-    }
+    // if (fiber.parent) {
+    //     fiber.parent.dom.appendChild(fiber.dom);
+    // }
     // 遍历子元素
     const elements = fiber.props.children;
     let index = 0;
@@ -89,11 +114,6 @@ function performUnitOfWork(fiber) {
     // 如果没有, 则返回null
     return null;
 }
-
-// function commitRoot() {
-//     commitWork(nextUnitOfWork);
-//     nextUnitOfWork = null;
-// }
 
 scheduleTask(workLoop, performance.now());
 
