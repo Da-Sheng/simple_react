@@ -1,3 +1,5 @@
+import { scheduleTask } from '../react/polyfillIdle';
+
 let nextUnitOfWork = null;
 
 function render(element, container) {
@@ -33,7 +35,7 @@ function workLoop(deadline) {
         nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
         shouldYield = deadline.timeRemaining() < 1;
     }
-    requestIdleCallback(workLoop);
+    scheduleTask(workLoop, performance.now());
 }
 // 执行单元任务 执行一个单元任务, 并返回下一个单元任务
 function performUnitOfWork(fiber) {
@@ -93,7 +95,7 @@ function performUnitOfWork(fiber) {
 //     nextUnitOfWork = null;
 // }
 
-requestIdleCallback(workLoop);
+scheduleTask(workLoop, performance.now());
 
 export default {
     render
