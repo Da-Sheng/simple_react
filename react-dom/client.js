@@ -2,31 +2,122 @@ import { scheduleTask } from '../react/polyfillIdle';
 
 let nextUnitOfWork = null;
 let wipRoot = null;
+let currentRoot = null;
+let deletions = null;
 
+const isProperty = name => name !== 'children' && !name.startsWith('on');
+const isEvent = name => name.startsWith('on');
 function render(element, container) {
     wipRoot = {
         dom: container,
         props: {
             children: [element] // 根元素
-        }
+        },
+        alternate: currentRoot
     }
     nextUnitOfWork = wipRoot;
+    deletions = [];
+}
+
+function reconcileChildren(wipFiber, elements) {
+    let index = 0;
+    let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
+    let prevSibling = null;
+
+    while (index < elements.length || oldFiber != null) {
+        const element = elements[index];
+        let newFiber = null;
+        const sameType = oldFiber && element && oldFiber.type === element.type;
+        // 更新
+        if (sameType) {
+            newFiber = {
+                type: oldFiber.type,
+                props: element.props,
+                dom: oldFiber.dom,
+                parent: wipFiber,
+                alternate: oldFiber,
+                effectTag: 'UPDATE'
+            }
+        }
+        // 添加
+        if (element && !sameType) {
+            newFiber = {
+                type: element.type,
+                props: element.props,
+                dom: null,
+                parent: wipFiber,
+                alternate: null,
+                effectTag: 'PLACEMENT'
+            }
+        }
+        // 删除
+        if (oldFiber && !sameType) {
+            oldFiber.effectTag = 'DELETION';
+            deletions.push(oldFiber);
+        }
+        if (oldFiber) {
+            oldFiber = oldFiber.sibling;
+        }
+        // 添加到fiber树
+        if (index === 0) {
+            wipFiber.child = newFiber;
+        } else if (element) {
+            // 其他子元素
+            prevSibling.sibling = newFiber;
+        }
+        index++;
+        prevSibling = newFiber;
+    }
+}
+
+// 更新dom
+function updateDom(dom, prevProps, nextProps) {
+    // 删除旧的属性
+    Object.keys(prevProps).forEach(name => {
+        if (!(name in nextProps)) {
+            if (isEvent(name)) {
+                dom.removeEventListener(name.toLowerCase().substring(2), prevProps[name]);
+            } else {
+                dom[name] = null;
+            }
+        }
+    })
+    
+    // 添加新的属性
+    Object.keys(nextProps).forEach(name => {
+        if (prevProps[name] !== nextProps[name]) {
+            if (isProperty(name)) {
+                dom[name] = nextProps[name];
+            }
+        }
+    })
+    // 删除旧的事件
+    Object.keys(prevProps).forEach(name => {
+        if (isEvent(name)) {
+            dom.removeEventListener(name.toLowerCase().substring(2), prevProps[name]);
+        }
+    })
+    // 添加事件
+    Object.keys(nextProps).forEach(name => {
+        if (isEvent(name)) {
+            console.log('name', name)
+            dom.addEventListener(name.toLowerCase().substring(2), nextProps[name]);
+        }
+    })
+    // 添加ref
+    if (typeof prevProps.ref === 'function') {
+        prevProps.ref(null);
+    }
+    if (typeof nextProps.ref === 'function') {
+        nextProps.ref(dom);
+    }
 }
 
 const createDom = (fiber) => {
     const dom = fiber.type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(fiber.type);
-    const isProperty = name => name !== 'children' && !name.startsWith('on');
-    const isEvent = name => name.startsWith('on');
 
-    Object.keys(fiber.props).forEach(name => {
-        if (isProperty(name)) {
-            dom[name] = fiber.props[name];
-        }
-        if (isEvent(name)) {
-            const eventType = name.toLowerCase().substring(2);
-            dom.addEventListener(eventType, fiber.props[name]);
-        }
-    });
+    updateDom(dom, {}, fiber.props);
+
 
     return dom;
 }
@@ -35,11 +126,17 @@ function commitWork(fiber) {
     if (!fiber) {
         return;
     }
-    let domParent = fiber.parent.dom;
-    while (!domParent) {
-        domParent = domParent.parent.dom
+    const domParent = fiber.parent.dom;
+
+    if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) {
+        domParent.appendChild(fiber.dom);
+    } else if (fiber.effectTag === 'UPDATE' && fiber.dom != null) {
+        updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+    } else if (fiber.effectTag === 'DELETION') {
+        domParent.removeChild(fiber.dom);
     }
-    domParent.appendChild(fiber.dom)
+    
+    // 递归子元素
     commitWork(fiber.child)
     commitWork(fiber.sibling)
 }
@@ -47,6 +144,8 @@ function commitWork(fiber) {
 function commitRoot() {
     // 提交根元素
     commitWork(wipRoot.child);
+    currentRoot = wipRoot;
+    deletions = [];
     // 清空wipRoot
     wipRoot = null;
 }
@@ -74,29 +173,7 @@ function performUnitOfWork(fiber) {
     // }
     // 遍历子元素
     const elements = fiber.props.children;
-    let index = 0;
-    let prevSibling = null;
-
-    while (index < elements.length) {
-        const element = elements[index];
-        // 创建新的fiber
-        const newFiber = {
-            type: element.type,
-            props: element.props,
-            // 父元素
-            parent: fiber,
-            dom: null
-        }
-        // 第一个子元素
-        if (index === 0) {
-            fiber.child = newFiber;
-        } else {
-            // 其他子元素
-            prevSibling.sibling = newFiber;
-        }
-        prevSibling = newFiber;
-        index++;
-    }
+    reconcileChildren(fiber, elements);
     // 如果有子元素，则返回子元素
     if (fiber.child) {
         return fiber.child;
