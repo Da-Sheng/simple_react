@@ -20,6 +20,39 @@ function render(element, container) {
     scheduleTask(workLoop, performance.now());
 }
 
+let wipFiber = null;
+let hookIndex = 0;
+
+export function useState(initialState) {
+    const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+    const hook = {
+        state: oldHook ? oldHook.state : initialState,
+        queue: []
+    }
+    const actions = oldHook ? oldHook.queue : [];
+    actions.forEach(action => {
+        if (typeof action === 'function') {
+            hook.state = action(hook.state);
+        } else {
+            hook.state = action;
+        }
+    })
+    const setState = (action) => {
+        hook.queue.push(action);
+        wipRoot = {
+            dom: currentRoot.dom,
+            props: currentRoot.props,
+            alternate: currentRoot
+        }
+        nextUnitOfWork = wipRoot;
+        scheduleTask(workLoop, performance.now());
+        deletions = [];
+    }
+    hookIndex++;
+    wipFiber.hooks.push(hook);
+    return [hook.state, setState];
+}
+
 function reconcileChildren(wipFiber, elements) {
     let index = 0;
     let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
@@ -188,6 +221,9 @@ function workLoop(deadline) {
 }
 
 function updateFunctionComponent(fiber) {
+    wipFiber = fiber;
+    hookIndex = 0;
+    wipFiber.hooks = [];
     const children = [fiber.type(fiber.props)];
     reconcileChildren(fiber, children);
 }

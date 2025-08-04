@@ -1,5 +1,5 @@
 import React from '../react';
-import ReactDOM from '../react-dom/client';
+import ReactDOM, { useState } from '../react-dom/client';
 // import '../react/polyfillIdle';
 // import React from "react";
 
@@ -7,10 +7,22 @@ const updateValue = (e) => {
     reRender(e.target.value);
 }
 const App = ({ title, value }) => {
+    const [count, setCount] = useState(0);
+    const [count2, setCount2] = useState(0);
     return (
         <h1 title={title}>
             <input type="text" value={value} onInput={updateValue} />
             Hello, {value}!
+            <button onClick={() => {
+                setCount(count + 1)
+                setCount(count + 3)
+            }}>Click me</button>
+            <p>Count: {count}</p>
+            <button onClick={() => {
+                setCount2(c => c + 3)
+                setCount2(c => c + 2)
+            }}>Click me</button>
+            <p>Count2: {count2}</p>
         </h1>
     )
 }
