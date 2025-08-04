@@ -28,11 +28,17 @@ export function scheduleTask(task, expirationTime) {
 }
 
 function performTask(currentTime) {
-    const frameTime = 1000 / 120;
+    const frameTime = 1000 / 60; // 使用60fps作为标准帧率
     while (_task.length > 0 && performance.now() - currentTime < frameTime && isPerformingTask) {
         const { task, expirationTime } = _task.shift();
         if (performance.now() >= expirationTime) {
-            task({ currentTime, timeRemaining: () => performance.now() - currentTime });
+            // 修正timeRemaining计算，使其返回剩余的帧时间
+            const deadline = {
+                currentTime,
+                timeRemaining: () => Math.max(0, frameTime - (performance.now() - currentTime)),
+                didTimeout: performance.now() >= expirationTime
+            };
+            task(deadline);
         } else {
             scheduleTask(task, expirationTime);
         }

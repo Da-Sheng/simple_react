@@ -17,6 +17,7 @@ function render(element, container) {
     }
     nextUnitOfWork = wipRoot;
     deletions = [];
+    scheduleTask(workLoop, performance.now());
 }
 
 function reconcileChildren(wipFiber, elements) {
@@ -100,7 +101,6 @@ function updateDom(dom, prevProps, nextProps) {
     // 添加事件
     Object.keys(nextProps).forEach(name => {
         if (isEvent(name)) {
-            console.log('name', name)
             dom.addEventListener(name.toLowerCase().substring(2), nextProps[name]);
         }
     })
@@ -180,7 +180,11 @@ function workLoop(deadline) {
     if (!nextUnitOfWork && wipRoot) {
         commitRoot();
     }
-    scheduleTask(workLoop, performance.now());
+    
+    // 只有在有待处理工作时才调度新任务
+    if (nextUnitOfWork || wipRoot) {
+        scheduleTask(workLoop, performance.now());
+    }
 }
 
 function updateFunctionComponent(fiber) {
@@ -199,7 +203,6 @@ function updateHostComponent(fiber) {
 
 // 执行单元任务 执行一个单元任务, 并返回下一个单元任务
 function performUnitOfWork(fiber) {
-    console.log('fiber', fiber)
     const isFunctionComponent = fiber.type instanceof Function;
     if (isFunctionComponent) {
         updateFunctionComponent(fiber);
@@ -228,7 +231,6 @@ function performUnitOfWork(fiber) {
     return null;
 }
 
-scheduleTask(workLoop, performance.now());
 
 export default {
     render
