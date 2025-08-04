@@ -1,16 +1,22 @@
 import React from '../react';
 import ReactDOM from '../react-dom/client';
-import '../react/polyfillIdle';
+// import '../react/polyfillIdle';
+// import React from "react";
 
 const updateValue = (e) => {
     reRender(e.target.value);
 }
+const App = ({ title, value }) => {
+    return (
+        <h1 title={title}>
+            <input type="text" value={value} onInput={updateValue} />
+            Hello, {value}!
+        </h1>
+    )
+}
+
 const reRender = (value) => {
-    const element = (<h1 title="title">
-        <input type="text" value={value} onInput={updateValue} />
-        Hello, {value}!
-    </h1>);
-    ReactDOM.render(element, document.getElementById('root'));
+    ReactDOM.render(<App title="title" value={value} />, document.getElementById('root'));
 }
 // const element = <h1 title="title">
 //     Hello, React!

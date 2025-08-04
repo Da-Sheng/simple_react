@@ -126,19 +126,40 @@ function commitWork(fiber) {
     if (!fiber) {
         return;
     }
-    const domParent = fiber.parent.dom;
+    
+    // 找到最近的有DOM节点的父节点
+    let domParentFiber = fiber.parent;
+    while (domParentFiber && !domParentFiber.dom) {
+        domParentFiber = domParentFiber.parent;
+    }
+    const domParent = domParentFiber ? domParentFiber.dom : null;
+    
+    if (!domParent && fiber.dom) {
+        return; // 如果找不到DOM父节点且当前fiber有DOM节点，则不处理
+    }
 
     if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) {
         domParent.appendChild(fiber.dom);
     } else if (fiber.effectTag === 'UPDATE' && fiber.dom != null) {
         updateDom(fiber.dom, fiber.alternate.props, fiber.props);
     } else if (fiber.effectTag === 'DELETION') {
-        domParent.removeChild(fiber.dom);
+        commitDeletion(fiber, domParent);
     }
     
     // 递归子元素
     commitWork(fiber.child)
     commitWork(fiber.sibling)
+}
+
+// 处理删除操作
+function commitDeletion(fiber, domParent) {
+    // 如果有DOM节点，直接删除
+    if (fiber.dom) {
+        domParent.removeChild(fiber.dom);
+    } else {
+        // 否则递归删除子节点
+        commitDeletion(fiber.child, domParent);
+    }
 }
 
 function commitRoot() {
@@ -161,19 +182,34 @@ function workLoop(deadline) {
     }
     scheduleTask(workLoop, performance.now());
 }
-// 执行单元任务 执行一个单元任务, 并返回下一个单元任务
-function performUnitOfWork(fiber) {
-    // 创建dom
+
+function updateFunctionComponent(fiber) {
+    const children = [fiber.type(fiber.props)];
+    reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
     if (!fiber.dom) {
         fiber.dom = createDom(fiber);
+    }
+    // 遍历子元素
+    const elements = fiber.props.children;
+    reconcileChildren(fiber, elements);
+}
+
+// 执行单元任务 执行一个单元任务, 并返回下一个单元任务
+function performUnitOfWork(fiber) {
+    console.log('fiber', fiber)
+    const isFunctionComponent = fiber.type instanceof Function;
+    if (isFunctionComponent) {
+        updateFunctionComponent(fiber);
+    } else {
+        updateHostComponent(fiber);
     }
     // 将dom添加到父元素
     // if (fiber.parent) {
     //     fiber.parent.dom.appendChild(fiber.dom);
     // }
-    // 遍历子元素
-    const elements = fiber.props.children;
-    reconcileChildren(fiber, elements);
     // 如果有子元素，则返回子元素
     if (fiber.child) {
         return fiber.child;
