@@ -4,6 +4,7 @@ let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
+let isRenderScheduled = false; // 标记是否已经调度了一个渲染任务
 
 const isProperty = name => name !== 'children' && !name.startsWith('on');
 const isEvent = name => name.startsWith('on');
@@ -45,12 +46,56 @@ export function useState(initialState) {
             alternate: currentRoot
         }
         nextUnitOfWork = wipRoot;
-        scheduleTask(workLoop, performance.now());
         deletions = [];
+        
+        // 只有在当前没有进行中的渲染任务时，才调度一个新的任务
+        // 因为workLoop中已经有条件判断，所以这里不需要重复调度
+        if (!isRenderScheduled) {
+            isRenderScheduled = true;
+            scheduleTask(workLoop, performance.now());
+        }
     }
     hookIndex++;
     wipFiber.hooks.push(hook);
     return [hook.state, setState];
+}
+
+export function useEffect(callback, deps) {
+    const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+    
+    // 创建新的effect hook
+    const hook = {
+        tag: 'effect',
+        callback,
+        deps,
+        cleanup: undefined
+    };
+    
+    // 如果有旧的hook，并且依赖项没有变化，则保留旧的cleanup函数
+    if (oldHook) {
+        const oldDeps = oldHook.deps;
+        // 检查依赖项是否变化
+        const depsChanged = !deps || 
+            !oldDeps || 
+            deps.length !== oldDeps.length || 
+            deps.some((dep, i) => dep !== oldDeps[i]);
+        
+        if (!depsChanged) {
+            // 依赖项没有变化，保留旧的cleanup函数，不执行effect
+            hook.cleanup = oldHook.cleanup;
+            hook.effectTag = 'NO_EFFECT';
+        } else {
+            // 依赖项变化，需要执行cleanup和effect
+            hook.cleanup = oldHook.cleanup;
+            hook.effectTag = 'UPDATE';
+        }
+    } else {
+        // 首次渲染，需要执行effect
+        hook.effectTag = 'PLACEMENT';
+    }
+    
+    hookIndex++;
+    wipFiber.hooks.push(hook);
 }
 
 function reconcileChildren(wipFiber, elements) {
@@ -175,9 +220,8 @@ function commitWork(fiber) {
         domParent.appendChild(fiber.dom);
     } else if (fiber.effectTag === 'UPDATE' && fiber.dom != null) {
         updateDom(fiber.dom, fiber.alternate.props, fiber.props);
-    } else if (fiber.effectTag === 'DELETION') {
-        commitDeletion(fiber, domParent);
     }
+    // 删除操作已经在commitRoot中处理
     
     // 递归子元素
     commitWork(fiber.child)
@@ -185,23 +229,93 @@ function commitWork(fiber) {
 }
 
 // 处理删除操作
-function commitDeletion(fiber, domParent) {
-    // 如果有DOM节点，直接删除
+function commitDeletion(fiber) {
+    if (!fiber) {
+        return;
+    }
+    
+    // 如果是函数组件，需要执行effect的清理函数
+    if (fiber.type instanceof Function && fiber.hooks) {
+        fiber.hooks.forEach(hook => {
+            if (hook.tag === 'effect' && typeof hook.cleanup === 'function') {
+                // 标记为删除，执行清理
+                hook.effectTag = 'DELETION';
+                hook.cleanup();
+            }
+        });
+    }
+    
+    // 如果有DOM节点，找到父节点并删除
     if (fiber.dom) {
-        domParent.removeChild(fiber.dom);
+        let domParentFiber = fiber.parent;
+        while (domParentFiber && !domParentFiber.dom) {
+            domParentFiber = domParentFiber.parent;
+        }
+        if (domParentFiber && domParentFiber.dom) {
+            domParentFiber.dom.removeChild(fiber.dom);
+        }
     } else {
-        // 否则递归删除子节点
-        commitDeletion(fiber.child, domParent);
+        // 递归处理子节点
+        commitDeletion(fiber.child);
+    }
+    
+    // 处理兄弟节点
+    commitDeletion(fiber.sibling);
+}
+
+// 执行effects
+function commitEffects(fiber) {
+    if (!fiber) {
+        return;
+    }
+    
+    // 递归处理子节点和兄弟节点
+    commitEffects(fiber.child);
+    commitEffects(fiber.sibling);
+    
+    const componentFiber = fiber.type instanceof Function ? fiber : null;
+    
+    // 如果当前fiber是函数组件，执行其effects
+    if (componentFiber) {
+        // 执行需要清理的effects
+        componentFiber.hooks && componentFiber.hooks.forEach(hook => {
+            if (hook.tag === 'effect' && (hook.effectTag === 'UPDATE' || hook.effectTag === 'DELETION')) {
+                // 如果有清理函数，执行它
+                if (typeof hook.cleanup === 'function') {
+                    hook.cleanup();
+                }
+            }
+        });
+        
+        // 执行新的effects
+        componentFiber.hooks && componentFiber.hooks.forEach(hook => {
+            if (hook.tag === 'effect' && (hook.effectTag === 'PLACEMENT' || hook.effectTag === 'UPDATE')) {
+                // 执行effect回调，并保存清理函数
+                const cleanup = hook.callback();
+                hook.cleanup = typeof cleanup === 'function' ? cleanup : undefined;
+            }
+        });
     }
 }
 
 function commitRoot() {
-    // 提交根元素
+    // 首先处理需要删除的节点
+    deletions.forEach(commitDeletion);
+    
+    // 提交DOM更新
     commitWork(wipRoot.child);
+    
+    // 在DOM更新后执行effects
+    commitEffects(wipRoot.child);
+    
     currentRoot = wipRoot;
     deletions = [];
     // 清空wipRoot
     wipRoot = null;
+    // 如果没有更多的工作，重置调度标志
+    if (!nextUnitOfWork) {
+        isRenderScheduled = false;
+    }
 }
 
 function workLoop(deadline) {
@@ -217,6 +331,9 @@ function workLoop(deadline) {
     // 只有在有待处理工作时才调度新任务
     if (nextUnitOfWork || wipRoot) {
         scheduleTask(workLoop, performance.now());
+    } else {
+        // 当没有更多工作要做时，重置调度标志
+        isRenderScheduled = false;
     }
 }
 
@@ -269,5 +386,7 @@ function performUnitOfWork(fiber) {
 
 
 export default {
-    render
+    render,
+    useState,
+    useEffect
 }
